@@ -39,7 +39,7 @@ h6 {
 
 .leaflet-control-custom {
   padding: 6px 8px;
-  background: #F7E8DE;
+  background: linen;
   box-shadow: 0 1px 5px rgba(0,0,0,0.4);
   color: #F7E8DE;
   border-radius: 5px;
@@ -166,7 +166,7 @@ form {
   left: 10vw;
   width: 70vw;
   z-index: 1000;
-  background: white;
+  background: linen;
   padding: 1vh 5vw;
   opacity: 0.9;
   border: 5px #ddd solid;
@@ -186,8 +186,8 @@ form {
   top: 3px;
   right: 3px;
   width: 30px;
-  background: #bbb;
-  color: white;
+  background: #F7E8DE;
+  color: linen;
   font-size: 1.4em;
   text-align: center;
   border-radius: 5px;
