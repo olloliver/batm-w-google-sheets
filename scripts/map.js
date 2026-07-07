@@ -62,6 +62,47 @@ $(window).on('load', function() {
 
 
   /**
+   * Parses comma-separated group names from the Group column.
+   * e.g. "School, Tools" -> ["School", "Tools"]
+   */
+  function parseGroups(groupValue) {
+    if (!groupValue || String(groupValue).trim() === '') {
+      return [];
+    }
+    return String(groupValue).split(',').map(function(s) {
+      return s.trim();
+    }).filter(Boolean);
+  }
+
+  /**
+   * Returns group names whose overlay layers are currently enabled on the map.
+   */
+  function getActiveGroups(layers) {
+    var active = [];
+    for (var name in layers) {
+      if (map.hasLayer(layers[name])) {
+        active.push(name);
+      }
+    }
+    return active;
+  }
+
+  /**
+   * A point is visible when at least one of its groups is active.
+   */
+  function isPointVisible(pointGroups, activeGroups) {
+    if (activeGroups.length === 0) {
+      return false;
+    }
+    for (var i = 0; i < pointGroups.length; i++) {
+      if (activeGroups.indexOf(pointGroups[i]) >= 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Given a collection of points, determines the layers based on 'Group'
    * column in the spreadsheet.
    */
@@ -70,15 +111,17 @@ $(window).on('load', function() {
     var layers = {};
 
     for (var i in points) {
-      var group = points[i].Group;
-      if (group && groups.indexOf(group) === -1) {
-        // Add group to groups
-        groups.push(group);
+      var pointGroups = parseGroups(points[i].Group);
+      for (var j = 0; j < pointGroups.length; j++) {
+        var group = pointGroups[j];
+        if (groups.indexOf(group) === -1) {
+          groups.push(group);
 
-        // Add color to the crosswalk
-        group2color[ group ] = points[i]['Marker Icon'].indexOf('.') > 0
-          ? points[i]['Marker Icon']
-          : points[i]['Marker Color'];
+          // Add color to the crosswalk (first point in a group wins)
+          group2color[ group ] = points[i]['Marker Icon'].indexOf('.') > 0
+            ? points[i]['Marker Icon']
+            : points[i]['Marker Color'];
+        }
       }
     }
 
@@ -100,6 +143,11 @@ $(window).on('load', function() {
    */
   function mapPoints(points, layers) {
     var markerArray = [];
+    var markerRecords = [];
+    var layerCount = layers ? Object.keys(layers).length : 0;
+    var useGroupFilter = layers !== undefined && layerCount > 0;
+    var clusters = (getSetting('_markercluster') === 'on') ? true : false;
+
     // check that map has loaded before adding points to it?
     for (var i in points) {
       var point = points[i];
@@ -131,8 +179,13 @@ $(window).on('load', function() {
           (point['Image'] ? ('<img src="' + point['Image'] + '"><br>') : '') +
           point['Description']);
 
-        if (layers !== undefined && layers.length !== 1) {
-          marker.addTo(layers[point.Group]);
+        var pointGroups = parseGroups(point.Group);
+
+        if (useGroupFilter && !clusters) {
+          markerRecords.push({marker: marker, groups: pointGroups});
+        } else if (useGroupFilter && pointGroups.length > 0) {
+          // Cluster mode: assign to the first group (multi-group needs clusters off)
+          marker.addTo(layers[pointGroups[0]]);
         }
 
         markerArray.push(marker);
@@ -140,10 +193,23 @@ $(window).on('load', function() {
     }
 
     var group = L.featureGroup(markerArray);
-    var clusters = (getSetting('_markercluster') === 'on') ? true : false;
 
-    // if layers.length === 0, add points to map instead of layer
-    if (layers === undefined || layers.length === 0) {
+    function updateMarkerVisibility() {
+      var activeGroups = getActiveGroups(layers);
+      for (var i = 0; i < markerRecords.length; i++) {
+        var record = markerRecords[i];
+        if (isPointVisible(record.groups, activeGroups)) {
+          if (!map.hasLayer(record.marker)) {
+            record.marker.addTo(map);
+          }
+        } else if (map.hasLayer(record.marker)) {
+          map.removeLayer(record.marker);
+        }
+      }
+    }
+
+    // if no layers, add points to map instead of layer
+    if (layers === undefined || layerCount === 0) {
       map.addLayer(
         clusters
         ? L.markerClusterGroup().addLayer(group).addTo(map)
@@ -174,6 +240,12 @@ $(window).on('load', function() {
         pointsLegend.addTo(map);
         pointsLegend._container.id = 'points-legend';
         pointsLegend._container.className += ' ladder';
+      }
+
+      // Multi-group filtering: overlay toggles drive marker visibility
+      if (markerRecords.length > 0) {
+        map.on('overlayadd overlayremove', updateMarkerVisibility);
+        updateMarkerVisibility();
       }
     }
 
@@ -212,8 +284,9 @@ $(window).on('load', function() {
       // Clear table data and add only visible markers to it
       function updateTable() {
         var pointsVisible = [];
+        var activeGroups = getActiveGroups(layers);
         for (i in points) {
-          if (map.hasLayer(layers[points[i].Group]) &&
+          if (isPointVisible(parseGroups(points[i].Group), activeGroups) &&
               map.getBounds().contains(L.latLng(points[i].Latitude, points[i].Longitude))) {
             pointsVisible.push(points[i]);
           }
