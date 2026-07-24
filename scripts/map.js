@@ -125,6 +125,8 @@ $(window).on('load', function() {
       }
     }
 
+    groups.sort();
+
     // if none of the points have named layers, return no layers
     if (groups.length === 0) {
       layers = undefined;
